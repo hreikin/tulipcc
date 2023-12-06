@@ -18,8 +18,10 @@
 int state = 0;
 QueueHandle_t interruptQueue;
 struct KeyMapping {
-    // The following characters should be available to map to an alternative
-    // Default: q w e r t y u i o p a s d f g h j k l z x c v b n m $  
+    // The following characters should be available to map to an alternative in
+    // all the structs below with the exception of altMappings. The numbers 0-9
+    // are unavailable within altMappings due to the alt keycodes.
+    // Default: q w e r t y u i o p a s d f g h j k l z x c v b n m $ <space>
     // Shift: Q W E R T Y U I O P A S D F G H J K L Z X C V B N M
     // Symbol: # 1 2 3 ( ) _ - + @ * 4 5 6 / : ; \ " 7 8 9 ? ! , . 0
     char original;
@@ -81,10 +83,10 @@ void run_tdeck_keyboard() {
         {'i', '<'},
         {'o', '>'},
         {'p', '='},
-        {'a', 172},     // Prints an empty character but should be a ¬ sign
+        {'a', 172},     // Prints nothing but should be a ¬ sign
         {'g', '\\'},    // Backslash needs escaping
         {'k', '`'},
-        {'$', 163},     // Prints an empty character but should be a £ sign
+        {'$', 163},     // Prints nothing but should be a £ sign
         {' ', '\t'},    // Sends tab
         // Requires symbol to be pressed after alt+c
         {'(', '['},
@@ -174,13 +176,17 @@ void run_tdeck_keyboard() {
     while (1) {
         i2c_master_read_from_device(I2C_NUM_0, LILYGO_KB_SLAVE_ADDRESS, rx_data, 1, pdMS_TO_TICKS(TIMEOUT_MS));
         if (rx_data[0] > 0) {
-            if (rx_data[0] == 224) {
+            // Toggle ctrl key (shift+microphone or shift-0)
             if (rx_data[0] == SHIFT_MICROPHONE) {
                 ctrl_toggle = !ctrl_toggle;
+            // Toggle alt key (shift+$ or shift-speaker)
             } else if (rx_data[0] == END_OF_TRANSMISSION_CHARACTER) {
+                alt_toggle = !alt_toggle;
+            // Set alternate character mode (alt+c), this is the key with `alt` printed on it that isnt actually an alt key
             } else if (rx_data[0] == FORMFEED) {
                 alt_char_mode = !alt_char_mode;
             } else {
+                // Send alternate characters if alternate character set is enabled, otherwise send as is
                 if (alt_char_mode) {
                     // Send alternate characters if alternate character set is enabled, otherwise send as is
                     char_to_send[0] = get_alternative_char(charMappings, charMappingsSize, rx_data[0]);
@@ -188,7 +194,7 @@ void run_tdeck_keyboard() {
                 } else {
                     char_to_send[0] = rx_data[0];
                 }
-                // Send as is, combining with ctrl if toggled
+                // Send as is, combining with ctrl or alt if toggled
                 if (ctrl_toggle) {
                     send_key_to_micropython(get_alternative_char(ctrlMappings, ctrlMappingsSize, char_to_send[0]));
                     ctrl_toggle = false;  // Reset toggle after sending
