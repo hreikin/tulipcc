@@ -12,6 +12,7 @@
 #include "freertos/queue.h"
 #include "driver/gpio.h"
 #include "usb_keyboard.h"
+#include <ctype.h>
 
 #define TIMEOUT_MS    10
 
@@ -69,6 +70,7 @@ void run_tdeck_keyboard() {
 
     bool alt_char_mode = false;
     bool ctrl_toggle = false;
+    bool alt_toggle = false;
     uint8_t rx_data[5];
     uint8_t char_to_send[1];
     struct KeyMapping charMappings[] = {
@@ -123,10 +125,18 @@ void run_tdeck_keyboard() {
         {'$', DELETE_CHARACTER},
         {' ', ESCAPE_CHARACTER},
     };
+    struct KeyMapping altMappings[] = {
+        // Default keys
+        {'e', TDECK_UP_KEY},
+        {'x', TDECK_DOWN_KEY},
+        {'s', TDECK_LEFT_KEY},
+        {'f', TDECK_RIGHT_KEY},
     };
     int charMappingsSize = sizeof(charMappings) / sizeof(charMappings[0]);
     int ctrlMappingsSize = sizeof(ctrlMappings) / sizeof(ctrlMappings[0]);
-
+    int altMappingsSize = sizeof(altMappings) / sizeof(altMappings[0]);
+    int alt_number_list[5];
+    int alt_number_index = 0;
     i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = TDECK_I2C_SDA,
@@ -188,7 +198,6 @@ void run_tdeck_keyboard() {
             } else {
                 // Send alternate characters if alternate character set is enabled, otherwise send as is
                 if (alt_char_mode) {
-                    // Send alternate characters if alternate character set is enabled, otherwise send as is
                     char_to_send[0] = get_alternative_char(charMappings, charMappingsSize, rx_data[0]);
                     alt_char_mode = false;
                 } else {
@@ -198,6 +207,24 @@ void run_tdeck_keyboard() {
                 if (ctrl_toggle) {
                     send_key_to_micropython(get_alternative_char(ctrlMappings, ctrlMappingsSize, char_to_send[0]));
                     ctrl_toggle = false;  // Reset toggle after sending
+                } else if (alt_toggle) {
+                    if (isdigit(rx_data[0])) {
+                        // Store numbers in the list for alt key
+                        alt_number_list[alt_number_index++] = rx_data[0] - '0';
+                    } else if (rx_data[0] == CARRIAGE_RETURN) {
+                        // Send the combined number when carriage return is encountered
+                        int combined_number = 0;
+                        for (int i = 0; i < alt_number_index; ++i) {
+                            combined_number = combined_number * 10 + alt_number_list[i];
+                        }
+                        send_key_to_micropython(combined_number);
+                        alt_toggle = false;   // Reset toggle after sending
+                        alt_number_index = 0; // Reset the index
+                    } else {
+                        send_key_to_micropython(get_alternative_char(altMappings, altMappingsSize, char_to_send[0]));
+                        alt_toggle = false;   // Reset toggle after sending
+                        alt_number_index = 0; // Reset the index
+                    }
                 } else {
                     send_key_to_micropython(char_to_send[0]);
                 }
@@ -205,5 +232,3 @@ void run_tdeck_keyboard() {
         }
     }
 }
-
-
